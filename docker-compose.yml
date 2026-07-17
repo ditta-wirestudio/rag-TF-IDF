@@ -25,12 +25,17 @@ services:
       GROQ_API_KEY: ${GROQ_API_KEY:-}
       GROQ_MODEL: ${GROQ_MODEL:-llama-3.3-70b-versatile}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      EMBED_PROVIDER: ${EMBED_PROVIDER:-auto}
+      FASTEMBED_MODEL: ${FASTEMBED_MODEL:-BAAI/bge-small-en-v1.5}
       EMBED_DIM: ${EMBED_DIM:-1536}
     ports:
       - "8000:8000"
+    volumes:
+      - model_cache:/root/.cache
     depends_on:
       db:
         condition: service_healthy
 
 volumes:
   pgdata:
+  model_cache:

@@ -35,17 +35,33 @@ async def lifespan(app: FastAPI):
     if settings.resolved_embed == "hashing":
         log.warning("embeddings=hashing is DEMO-ONLY (poor retrieval). "
                     "Install fastembed or set OPENAI_API_KEY for real quality.")
+    if settings.resolved_embed == "fastembed":
+        # warm up at startup — first load downloads the model (~30s); without
+        # this the first /query request hangs on "Thinking…" for that long
+        rag.fastembed_model()
     if not rag.use_memory():
         from db import init_schema
-        init_schema()
+        if init_schema():
+            n = rag.reembed_all()
+            log.info("re-embedded %d chunks after embedding-dimension change", n)
         log.info("postgres schema ready")
-    else:
-        # offline/demo: auto-load the sample corpus so the app is useful immediately
-        if not rag._mem:
-            docs = Path(__file__).parent.parent / "sample_docs"
-            for p in sorted(docs.glob("*.md")):
-                rag.ingest(source=p.name, text=p.read_text(), title=p.stem)
-        log.info("memory store ready (%d chunks)", len(rag._mem))
+    # seed the sample corpus if the store is empty, so the app (and its evals)
+    # are useful immediately — applies to both memory and a fresh Postgres
+    if settings.seed_sample_docs and not rag.list_documents():
+        docs = Path(__file__).parent.parent / "sample_docs"
+        for p in sorted(docs.glob("*.md")):
+            rag.ingest(source=p.name, text=p.read_text(), title=p.stem)
+        log.info("seeded sample corpus [%s]",
+                 "memory" if rag.use_memory() else "postgres")
+    # make sure the dashboard has eval numbers on first visit (last_run.json
+    # does not survive container rebuilds)
+    if evals.latest() is None:
+        try:
+            out = evals.run()
+            if out.get("metrics"):
+                log.info("startup eval run: %s", out["metrics"])
+        except Exception as e:                                    # noqa: BLE001
+            log.warning("startup eval run failed: %s", e)
     yield
     if not rag.use_memory():
         from db import close_pool
@@ -207,31 +223,58 @@ async function upload(){
 async function ask(){
  const q=document.getElementById('q').value.trim(); if(!q)return;
  const box=document.getElementById('answer'); box.innerHTML='<em>Thinking…</em>';
- const r=await fetch('/query',{method:'POST',headers:{'content-type':'application/json'},
-   body:JSON.stringify({query:q,k:3})});
- const d=await r.json();
- const cites=(d.citations||[]).map(c=>
-   `<span style="display:inline-block;background:#eef4ff;border-radius:6px;padding:.15rem .5rem;margin:.15rem .25rem .15rem 0;font-size:.85rem">[${c.n}] ${c.source} · ${c.score}</span>`).join('');
- box.innerHTML=`<div style="white-space:pre-wrap;background:#fafafa;border-radius:8px;padding:.8rem">${d.answer}</div>
-   <div style="margin-top:.5rem"><b>Sources:</b><br>${cites||'—'}</div>
-   ${d.mode?`<div style="color:#999;font-size:.8rem;margin-top:.4rem">mode: ${d.mode}</div>`:''}`;
+ try{
+   const r=await fetch('/query',{method:'POST',headers:{'content-type':'application/json'},
+     body:JSON.stringify({query:q,k:3})});
+   const d=await r.json();
+   if(!r.ok){
+     box.innerHTML='<span class="bad">Error: '+(d.detail||('HTTP '+r.status))+'</span>';
+     return;
+   }
+   const cites=(d.citations||[]).map(c=>
+     `<span style="display:inline-block;background:#eef4ff;border-radius:6px;padding:.15rem .5rem;margin:.15rem .25rem .15rem 0;font-size:.85rem">[${c.n}] ${c.source} · ${c.score}</span>`).join('');
+   box.innerHTML=`<div style="color:#666;font-size:.9rem;margin-bottom:.4rem">Q: ${q}</div>
+     <div style="white-space:pre-wrap;background:#fafafa;border-radius:8px;padding:.8rem">${d.answer}</div>
+     <div style="margin-top:.5rem"><b>Sources:</b><br>${cites||'—'}</div>
+     ${d.mode?`<div style="color:#999;font-size:.8rem;margin-top:.4rem">mode: ${d.mode}</div>`:''}`;
+ }catch(e){box.innerHTML='<span class="bad">Request failed: '+e+'</span>';}
 }
-async function load(){
- const r = await fetch('/api/evals'); const d = await r.json();
- if(!d.metrics){document.getElementById('cards').innerHTML='<p>No eval run yet. Click “Run evals”.</p>';return;}
+function renderEvals(d){
+ const cards=document.getElementById('cards');
+ const tb=document.querySelector('#detail tbody'); tb.innerHTML='';
+ if(!d.metrics){
+   cards.innerHTML='<p>No eval run yet on this server. Click “Run evals now”.</p>';
+   tb.innerHTML='<tr><td colspan="4" style="color:#999">No eval data yet — run evals to populate this table.</td></tr>';
+   return;
+ }
  const m=d.metrics;
- document.getElementById('cards').innerHTML=`
+ cards.innerHTML=`
    <div class="card"><div class="n">${(m.precision_at_k*100).toFixed(0)}%</div><div class="l">Precision@${m.k}</div></div>
    <div class="card"><div class="n">${(m.recall_at_k*100).toFixed(0)}%</div><div class="l">Recall@${m.k}</div></div>
    <div class="card"><div class="n">${m.mrr.toFixed(2)}</div><div class="l">MRR</div></div>
    <div class="card"><div class="n">${m.n}</div><div class="l">Test questions</div></div>`;
- const tb=document.querySelector('#detail tbody'); tb.innerHTML='';
  d.details.forEach(x=>tb.insertAdjacentHTML('beforeend',
-   `<tr><td>${x.question}</td>
+   `<tr><td>${x.question??'—'}</td>
      <td class="${x.hit?'ok':'bad'}">${x.hit?'yes':'no'}</td>
      <td>${x.rank||'-'}</td><td>${x.top_score??'-'}</td></tr>`));
 }
-async function runEvals(){document.getElementById('cards').innerHTML='<p>Running…</p>';
- await fetch('/api/evals/run',{method:'POST'}); load();}
+async function load(){
+ try{
+   const r=await fetch('/api/evals'); renderEvals(await r.json());
+ }catch(e){document.getElementById('cards').innerHTML='<p class="bad">Could not load evals: '+e+'</p>';}
+}
+async function runEvals(){
+ const cards=document.getElementById('cards');
+ cards.innerHTML='<p>Running…</p>';
+ try{
+   const r=await fetch('/api/evals/run',{method:'POST'});
+   const d=await r.json();
+   if(!r.ok||d.error){
+     cards.innerHTML='<p class="bad">Eval run failed: '+(d.detail||d.error||('HTTP '+r.status))+'</p>';
+     return;
+   }
+   renderEvals(d);
+ }catch(e){cards.innerHTML='<p class="bad">Eval run failed: '+e+'</p>';}
+}
 load(); loadDocs();
 </script></body></html>"""

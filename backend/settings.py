@@ -4,11 +4,32 @@ All tunables live here and are read from the environment / .env once at startup.
 """
 from __future__ import annotations
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
+    @field_validator("*", mode="before")
+    @classmethod
+    def _strip_inline_env_comments(cls, v):
+        """Guard against .env inline comments leaking into values.
+
+        Some parsers (notably docker compose) pass 'KEY=   # note' through as
+        the literal value '# note', which then looks like a real API key /
+        setting. Follow dotenv semantics: '#' at the start of the value or
+        preceded by whitespace begins a comment.
+        """
+        if not isinstance(v, str):
+            return v
+        s = v.strip()
+        if s.startswith("#"):
+            return ""
+        for i in range(1, len(s)):
+            if s[i] == "#" and s[i - 1] in " \t":
+                return s[:i].strip()
+        return s
 
     # --- storage / embeddings backend -------------------------------------
     store: str = "auto"                     # auto | postgres | memory
@@ -52,6 +73,7 @@ class Settings(BaseSettings):
     # --- api --------------------------------------------------------------
     api_key: str = ""                       # if set, required on write endpoints
     cors_origins: str = "*"                 # comma-separated
+    seed_sample_docs: bool = True           # auto-ingest sample_docs/ when store is empty
 
     @property
     def resolved_llm(self) -> str:

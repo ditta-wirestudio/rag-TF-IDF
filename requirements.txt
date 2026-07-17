@@ -16,3 +16,4 @@ pgvector>=0.3
 # Tests
 pytest>=8.0
 httpx>=0.27
+fastembed

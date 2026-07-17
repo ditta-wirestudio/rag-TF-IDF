@@ -201,6 +201,33 @@ def ingest(source: str, text: str, title: str | None = None) -> dict:
     return {"document_id": doc_id, "chunks": len(chunks), "store": "postgres"}
 
 
+def reembed_all() -> int:
+    """Recompute embeddings for every stored chunk.
+
+    Needed after the embedding provider (and thus vector dimension) changes:
+    chunk text is kept, only the vectors are rebuilt. Returns chunk count.
+    """
+    if use_memory():
+        for i in range(0, len(_mem), settings.embed_batch_size):
+            batch = _mem[i:i + settings.embed_batch_size]
+            for c, v in zip(batch, embed([c["content"] for c in batch])):
+                c["vec"] = v
+        return len(_mem)
+
+    from db import connection
+    with connection() as conn, conn.cursor() as cur:
+        cur.execute("SELECT id, content FROM chunks ORDER BY id")
+        rows = cur.fetchall()
+        for i in range(0, len(rows), settings.embed_batch_size):
+            batch = rows[i:i + settings.embed_batch_size]
+            vecs = embed([r["content"] for r in batch])
+            cur.executemany(
+                "UPDATE chunks SET embedding = %s WHERE id = %s",
+                [(str(v), r["id"]) for v, r in zip(vecs, batch)])
+        conn.commit()
+    return len(rows)
+
+
 # ---------------------------------------------------------------- retrieval
 def retrieve(query: str, k: int | None = None) -> list[dict]:
     k = k or settings.default_k
