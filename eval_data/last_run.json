@@ -1,0 +1,35 @@
+{
+  "metrics": {
+    "k": 5,
+    "n": 4,
+    "precision_at_k": 0.2,
+    "recall_at_k": 1.0,
+    "mrr": 0.688
+  },
+  "details": [
+    {
+      "question": "What is the return policy window?",
+      "hit": true,
+      "rank": 4,
+      "top_score": 0.306
+    },
+    {
+      "question": "How do I reset my password?",
+      "hit": true,
+      "rank": 2,
+      "top_score": 0.102
+    },
+    {
+      "question": "Which regions do you ship to?",
+      "hit": true,
+      "rank": 1,
+      "top_score": 0.396
+    },
+    {
+      "question": "What are the API rate limits?",
+      "hit": true,
+      "rank": 1,
+      "top_score": 0.408
+    }
+  ]
+}

@@ -1,0 +1,26 @@
+[
+  {
+    "question": "What is the return policy window?",
+    "expected_sources": [
+      "returns-policy.md"
+    ]
+  },
+  {
+    "question": "How do I reset my password?",
+    "expected_sources": [
+      "account-faq.md"
+    ]
+  },
+  {
+    "question": "Which regions do you ship to?",
+    "expected_sources": [
+      "shipping.md"
+    ]
+  },
+  {
+    "question": "What are the API rate limits?",
+    "expected_sources": [
+      "api-docs.md"
+    ]
+  }
+]

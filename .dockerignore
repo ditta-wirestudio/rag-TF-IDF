@@ -1,0 +1,7 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+.git/
+eval_data/last_run.json
+.DS_Store

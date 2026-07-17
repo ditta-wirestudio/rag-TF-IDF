@@ -1,0 +1,18 @@
+# Core API
+fastapi>=0.111
+uvicorn>=0.30
+pydantic>=2.7
+pydantic-settings>=2.3
+python-multipart>=0.0.9    # file uploads (/ingest-file)
+pypdf>=4.0                 # PDF text extraction
+
+# Embeddings + vector store
+openai>=1.40                # OpenAI embeddings + OpenAI/Groq chat
+fastembed>=0.3             # free local on-device embeddings (no API key)
+psycopg[binary]>=3.1
+psycopg-pool>=3.2
+pgvector>=0.3
+
+# Tests
+pytest>=8.0
+httpx>=0.27
