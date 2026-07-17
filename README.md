@@ -331,9 +331,3 @@ Dockerfile, docker-compose.yml   Postgres+pgvector + API, one command
 | `FASTEMBED_MODEL` | `BAAI/bge-small-en-v1.5` | free local embedding model |
 | `EMBED_DIM` | `1536` | openai dim; fastembed=384 auto-applied |
 | `API_KEY` | *(empty)* | if set, required on write endpoints |
-
-## Next steps (roadmap)
-
-- Reranking (cross-encoder) + measure the Recall@k lift
-- Answer-faithfulness eval (does the answer stay in-context?)
-- Alembic migrations instead of `CREATE TABLE IF NOT EXISTS`
